@@ -2164,56 +2164,37 @@ static bool ParseAbilityContextReq(
 
 napi_value ContactsPickerSelect(napi_env env, napi_callback_info info)
 {
-    HILOG_WARN("[ContactsPicker] ContactsPickerSelect start");
     size_t argc = MAX_PARAMS;
     napi_value argv[MAX_PARAMS] = {0};
-    napi_value thisVar = nullptr;
-    napi_value result = nullptr;
-    void *data;
-    // 获取JS接口传入的参数
-    napi_get_cb_info(env, info, &argc, &(argv[0]), &thisVar, &data);
-    bool isStageMode = false;
-    OHOS::AbilityRuntime::IsStageContext(env, argv[0], isStageMode);
-    if (isStageMode) {
-        napi_value errorCode = ContactsNapiUtils::CreateError(env, PARAMETER_ERROR);
-        switch (argc) {
-            case ARGS_TWO:
-                if (!ContactsNapiUtils::MatchParameters(env, argv, { napi_object, napi_object })) {
-                    napi_throw(env, errorCode);
-                }
-                break;
-            case ARGS_THREE:
-                if (!ContactsNapiUtils::MatchParameters(env, argv, { napi_object, napi_object, napi_function })) {
-                    napi_throw(env, errorCode);
-                }
-                break;
-            default:
-                napi_throw(env, errorCode);
-                break;
-        }
+    if (napi_get_cb_info(env, info, &argc, argv, nullptr, nullptr) != napi_ok) { return nullptr; }
+    const bool valid = (argc == ARGS_TWO &&
+        ContactsNapiUtils::MatchParameters(env, argv, { napi_object, napi_object })) ||
+        (argc == ARGS_THREE &&
+        ContactsNapiUtils::MatchParameters(env, argv, { napi_object, napi_object, napi_function }));
+    if (!valid) {
+        napi_throw(env, ContactsNapiUtils::CreateError(env, PARAMETER_ERROR));
+        return nullptr;
     }
-    // init request of Want，构建 want 请求
-    OHOS::AAFwk::Want request;
-    AppExecFwk::UnwrapWant(env, argv[1], request);
-    request.SetElementName(CONTACT_PACKAGE_NAME, CONTACT_UI_EXT_ABILITY_NAME); // 设置包名 和 ability name
-    std::string targetType = CONTACT_UI_EXT_TYPE;
-    std::string targetUrl = "BatchSelectContactsPage";
-    request.SetParam(UI_EXT_TYPE, targetType);
-    request.SetParam(UI_EXT_TARGETURL, targetUrl);
-    // init request Context，第一个参数是Context，解析参数，转成AbilityContext或者UIExtensionContext
-    auto asyncContext = std::make_unique<OHOS::ContactsApi::BaseContext>();
-    asyncContext->env = env;
-    if (!ParseAbilityContextReq(env, argv[0],
-        asyncContext->context, asyncContext->uiExtensionContext)) {
-        HILOG_ERROR("[ContactsPicker] ParseAbilityContextReq failed");
-        return result;
+    auto context = std::make_unique<OHOS::ContactsApi::BaseContext>();
+    context->env = env;
+    if (!ParseAbilityContextReq(env, argv[0], context->context, context->uiExtensionContext)) {
+        napi_throw(env, ContactsNapiUtils::CreateError(env, PARAMETER_ERROR));
+        return nullptr;
     }
-    NAPI_CALL(env, ContactsNapiUtils::GetParamCallback(env, asyncContext, argc, argv)); // 解析Promise对象，用于返回JS结果
-    // start UIExtension Ability，启动UIExtensionAbility
-    StartUIExtensionAbility(request, asyncContext);
-    HILOG_INFO("[ContactsPicker] ContactsPickerSelect end");
-    return ContactsNapiUtils::NapiCreateAsyncWork(env, asyncContext, "ContactsPickerSelect",
-        StartContactsPickerExecute, StartContactsPickerAsyncCallbackComplete);
+    OHOS::AAFwk::Want want;
+    if (!AppExecFwk::UnwrapWant(env, argv[1], want)) {
+        napi_throw(env, ContactsNapiUtils::CreateError(env, PARAMETER_ERROR));
+        return nullptr;
+    }
+    want.SetElementName(CONTACT_PACKAGE_NAME, CONTACT_UI_EXT_ABILITY_NAME);
+    want.SetParam(UI_EXT_TYPE, std::string(CONTACT_UI_EXT_TYPE));
+    want.SetParam(UI_EXT_TARGETURL, std::string("BatchSelectContactsPage"));
+    NAPI_CALL(env, ContactsNapiUtils::GetParamCallback(env, context, argc, argv));
+    // Transfer the optional native callback reference exactly once. Public JS
+    // uses this Promise and dispatches its own callback overloads consistently.
+    napi_ref callback = context->callbackRef;
+    context->callbackRef = nullptr;
+    return ContactsNapiUtils::StartContactSelection(env, context->context, context->uiExtensionContext, want, callback);
 }
 
 napi_value ContactsPickerSave(napi_env env, napi_callback_info info)
@@ -3472,17 +3453,17 @@ napi_value DeclareFilterTypeConst(napi_env env, napi_value exports)
 
 napi_value DeclareModeConst(napi_env env, napi_value exports)
 {
-    // FilterType
+    // ContactSyncMode
     napi_property_descriptor desc[] = {
         DECLARE_NAPI_STATIC_PROPERTY("MODE_INCREMENTAL",
             ContactsNapiUtils::ToInt32Value(env, static_cast<int32_t>(MODE_INCREMENTAL))),
-        DECLARE_NAPI_STATIC_PROPERTY("DEFAULT_SELECT",
+        DECLARE_NAPI_STATIC_PROPERTY("MODE_CLOUD_BASED",
             ContactsNapiUtils::ToInt32Value(env, static_cast<int32_t>(MODE_CLOUD_BASED))),
     };
     napi_value result = nullptr;
-    napi_define_class(env, "ContactsSyncMode", NAPI_AUTO_LENGTH, ContactsNapiUtils::CreateClassConstructor, nullptr,
+    napi_define_class(env, "ContactSyncMode", NAPI_AUTO_LENGTH, ContactsNapiUtils::CreateClassConstructor, nullptr,
         sizeof(desc) / sizeof(*desc), desc, &result);
-    napi_set_named_property(env, exports, "ContactsSyncMode", result);
+    napi_set_named_property(env, exports, "ContactSyncMode", result);
     return exports;
 }
 
@@ -3526,6 +3507,7 @@ void Init(napi_env env, napi_value exports)
     DeclareFilterConditionConst(env, exports);
     DeclareDataFieldConst(env, exports);
     DeclareFilterTypeConst(env, exports);
+    DeclareModeConst(env, exports);
 }
 } // namespace ContactsApi
 } // namespace OHOS

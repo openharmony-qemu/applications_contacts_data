@@ -133,67 +133,67 @@ enum class Attribute {
     /**
      * Indicates the instant messaging (IM) address.
      */
-    ATTR_IM,
+    ATTR_IM = 3,
 
     /**
      * Indicates the nickname.
      */
-    ATTR_NICKNAME,
+    ATTR_NICKNAME = 5,
 
     /**
      * Indicates the organization.
      */
-    ATTR_ORGANIZATION,
+    ATTR_ORGANIZATION = 7,
 
     /**
      * Indicates the phone number.
      */
-    ATTR_PHONE,
+    ATTR_PHONE = 8,
 
     /**
      * Indicates the name.
      */
-    ATTR_NAME,
+    ATTR_NAME = 4,
 
     /**
      * Indicates the postal address.
      */
-    ATTR_POSTAL_ADDRESS,
+    ATTR_POSTAL_ADDRESS = 10,
 
     /**
      * Indicates the portrait.
      */
-    ATTR_PORTRAIT,
+    ATTR_PORTRAIT = 9,
 
     /**
      * Indicates the contact group.
      */
-    ATTR_GROUP_MEMBERSHIP,
+    ATTR_GROUP_MEMBERSHIP = 2,
 
     /**
      * Indicates the note.
      */
-    ATTR_NOTE,
+    ATTR_NOTE = 6,
 
     /**
      * Indicates the contact event.
      */
-    ATTR_CONTACT_EVENT,
+    ATTR_CONTACT_EVENT = 0,
 
     /**
      * Indicates the website.
      */
-    ATTR_WEBSITE,
+    ATTR_WEBSITE = 13,
 
     /**
      * Indicates the relation.
      */
-    ATTR_RELATION,
+    ATTR_RELATION = 11,
 
     /**
      * Indicates the Session Initiation Protocol (SIP) address.
      */
-    ATTR_SIP_ADDRESS = 17
+    ATTR_SIP_ADDRESS = 12
 };
 
 /**

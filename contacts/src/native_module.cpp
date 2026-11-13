@@ -16,6 +16,7 @@
 #include <napi/native_api.h>
 
 #include "contacts_api.h"
+#include "contacts_record_classes.h"
 
 extern const char _binary_contact_js_start[];
 extern const char _binary_contact_js_end[];
@@ -27,6 +28,13 @@ namespace ContactsApi {
 static napi_value ModuleInit(napi_env env, napi_value exports)
 {
     OHOS::ContactsApi::Init(env, exports);
+    if (RegisterPublicContactRecords(env, exports) != napi_ok) {
+        bool pending = false;
+        if (napi_is_exception_pending(env, &pending) == napi_ok && !pending) {
+            napi_throw_error(env, nullptr, "Failed to register contact record classes");
+        }
+        return nullptr;
+    }
     return exports;
 }
 

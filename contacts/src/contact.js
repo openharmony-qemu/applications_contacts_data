@@ -120,7 +120,7 @@ function startContactsPicker(context, config, type) {
   gContext = context;
   let helper;
   if (type === 'select') {
-    helper = contact.startContactsPicker(gContext, config);
+    helper = contact.startContactsPicker(context, config);
     console.log('[picker] selectContactsPicker');
     if (helper === undefined) {
       console.error('[picker] contact startContactsPicker helper is undefined');
@@ -175,6 +175,9 @@ function parseContactsPickerSelectOption(args) {
       config.parameters.isDisplayByName = option.isDisplayedByName;
     } else if (option.isDisplayByName !== undefined) {
       config.parameters.isDisplayByName = option.isDisplayByName;
+    }
+    if (option.isAutoDismissOnNavigation !== undefined) {
+      config.parameters.isAutoDismissOnNavigation = option.isAutoDismissOnNavigation;
     }
     if (option.filter !== undefined) {
       config.parameters.filter = option.filter;
@@ -480,71 +483,72 @@ async function contactsPickerSave(...args) {
 }
 
 function checkSelectParameter(config) {
-  console.warn('[picker] checkSelectParameter config.parameters.selectLimit ' + config.parameters.selectLimit);
-  if (config.parameters.selectLimit === undefined || config.parameters.selectLimit > 0) {
-    return true;
+  const params = config.parameters;
+  if (params.selectLimit !== undefined && (!Number.isInteger(params.selectLimit) || params.selectLimit <= 0)) {
+    return false;
   }
-  return false;
+  for (const key of ['isContactMultiSelect', 'isDisplayByName', 'isAutoDismissOnNavigation']) {
+    if (params[key] !== undefined && typeof params[key] !== 'boolean') { return false; }
+  }
+  if (params.filter !== undefined && (params.filter === null || typeof params.filter !== 'object' ||
+      Array.isArray(params.filter))) { return false; }
+  if (params.selectLimit > 10000) { params.selectLimit = 10000; }
+  return true;
+}
+
+function selectionError(error) {
+  const code = error && typeof error.code === 'number' ? error.code : error;
+  if ([201, 202, 401, 801, ERROR_SYSTEM, ERROR_QUERY_VALUE_FAILED, ERROR_INVALID_PARAMETER,
+    ERROR_OVER_LIMIT].includes(code)) { return new BusinessError(code); }
+  return new BusinessError(ERROR_SYSTEM);
 }
 
 function parseContacts(result) {
-  let pickerData = result.pickerData;
-  let contacts = [];
-  try {
-    contacts = JSON.parse(pickerData);
-  } catch (Error) {
-    console.error(`[picker] JSON.parse Error: ${Error}`);
+  if (!result || typeof result.pickerData !== 'string' || !Number.isInteger(result.total) ||
+      result.total < 0 || result.total > 10000) { throw new BusinessError(ERROR_SYSTEM); }
+  let contacts;
+  try { contacts = JSON.parse(result.pickerData); }
+  catch (_) { throw new BusinessError(ERROR_SYSTEM); }
+  if (!Array.isArray(contacts) || contacts.length !== result.total ||
+      contacts.some(item => item === null || typeof item !== 'object' || Array.isArray(item))) {
+    throw new BusinessError(ERROR_SYSTEM);
   }
-  if (contacts.length !== result.total) {
-    console.error(`[picker] contacts.length : ${contacts.length} is not equal to total : ${result.total}`);
-  }
-  console.warn(`[picker] contacts.length : ${contacts.length}`);
+  if (result.resultCode === 1 && contacts.length !== 0) { throw new BusinessError(ERROR_SYSTEM); }
   return contacts;
 }
 
-async function contactsPickerSelect(...args) {
-  console.log('[picker] contactsPickerSelect START');
-  if (arguments.length === ARGUMENTS_LEN_TWO && typeof arguments[1] !== 'function') {
-    console.error('[picker] contactsPickerSelect callback invalid');
-    throw Error('invalid callback');
+function contactsPickerSelect(...args) {
+  let callback;
+  if (args.length > 2 || (args.length === 2 && typeof args[1] !== 'function') ||
+      (args.length > 0 && typeof args[0] !== 'function' &&
+        (args[0] === null || typeof args[0] !== 'object' || Array.isArray(args[0])))) {
+    throw new BusinessError(ERROR_CODE_INVALID_PARAM, ERROR_MSG_SELECT_INVALID_PARAM);
   }
-  const config = parseContactsPickerSelectOption(arguments);
+  if (args.length === 2 && typeof args[0] === 'function') {
+    throw new BusinessError(ERROR_CODE_INVALID_PARAM, ERROR_MSG_SELECT_INVALID_PARAM);
+  }
+  if (typeof args[args.length - 1] === 'function') { callback = args[args.length - 1]; }
+  const config = parseContactsPickerSelectOption(args);
   if (!checkSelectParameter(config)) {
-    if (arguments.length === ARGUMENTS_LEN_TWO) {
-      return args[1](new BusinessError(ERROR_CODE_INVALID_PARAM, ERROR_MSG_SELECT_INVALID_PARAM), undefined);
-    } else if (arguments.length === ARGUMENTS_LEN_ONE) {
-      throw new BusinessError(ERROR_CODE_INVALID_PARAM, ERROR_MSG_SELECT_INVALID_PARAM);
-    }
+    throw new BusinessError(ERROR_CODE_INVALID_PARAM, ERROR_MSG_SELECT_INVALID_PARAM);
   }
-  try {
-    let context = getContext(this);
-    let pickerType = 'select';
-    let result = await startContactsPicker(context, config, pickerType);
-    let contacts = parseContacts(result);
-    if (arguments.length === ARGUMENTS_LEN_TWO && typeof arguments[1] === 'function') {
-      if (result.resultCode === 0 || result.resultCode === 1) {
-        return args[1](undefined, contacts);
-      } else {
-        return args[1](result.resultCode, undefined);
+  const operation = (async () => {
+    try {
+      const context = getContext(this);
+      const result = await startContactsPicker(context, config, 'select');
+      if (!result || (result.resultCode !== 0 && result.resultCode !== 1)) {
+        throw selectionError(result ? result.resultCode : ERROR_SYSTEM);
       }
-    } else if (arguments.length === 1 && typeof arguments[0] === 'function') {
-      if (result.resultCode === 0 || result.resultCode === 1) {
-        return args[0](undefined, contacts);
-      } else {
-        return args[0](result.resultCode, undefined);
-      }
-    }
-    return new Promise((resolve, reject) => {
-      if (result.resultCode === 0 || result.resultCode === 1) {
-        resolve(contacts);
-      } else {
-        reject(result.resultCode);
-      }
-    });
-  } catch (error) {
-    console.error('[picker] contactsPickerSelect error: ' + error);
+      return parseContacts(result);
+    } catch (error) { throw selectionError(error); }
+  })();
+  if (callback !== undefined) {
+    // Only this pair settles the public callback; an exception thrown by the
+    // caller's callback must never cause a second callback invocation.
+    operation.then(contacts => callback(undefined, contacts), error => callback(error, undefined));
     return undefined;
   }
+  return operation;
 }
 
 export default {

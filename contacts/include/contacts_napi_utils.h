@@ -179,6 +179,10 @@ struct BaseContext {
 
 class ContactsNapiUtils {
 public:
+    static napi_value StartContactSelection(napi_env env,
+        const std::shared_ptr<OHOS::AbilityRuntime::AbilityContext> &ability,
+        const std::shared_ptr<OHOS::AbilityRuntime::UIExtensionContext> &extension,
+        const OHOS::AAFwk::Want &want, napi_ref callback);
     static napi_value ToInt32Value(napi_env env, int32_t value);
     static napi_value CreateClassConstructor(napi_env env, napi_callback_info info);
     static bool MatchValueType(napi_env env, napi_value value, napi_valuetype targetType);
